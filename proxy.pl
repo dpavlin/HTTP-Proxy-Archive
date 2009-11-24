@@ -9,7 +9,17 @@ use HTTP::Proxy::BodyFilter::save;
 use HTTP::Proxy::BodyFilter::simple;
 use HTTP::Proxy::HeaderFilter::simple;
 
+our $info = {
+	debug => 1,
+	direct => [ qw/
+imageserver.ebscohost.com
+	/ ],
+};
+use Data::Dump qw(dump);
+
+#
 # logger.pl
+#
 
 use CGI::Util qw( unescape );
 
@@ -119,7 +129,9 @@ else {
     $proxy->push_filter( response => $get_filter, mime => $args{mime} );
 }
 
+#
 # pdf.pl
+#
 
 my $saved;
 $proxy->push_filter(
@@ -152,6 +164,66 @@ $proxy->push_filter(
         }
     ),
 );
+
+#
+# admin interface
+#
+
+my $admin_filter = HTTP::Proxy::HeaderFilter::simple->new( sub {
+   my ( $self, $headers, $message ) = @_;
+warn "XXX ", $headers->header('x-forwarded-for'), ' ', $message->uri, "\n";
+
+	return unless $message->uri->host eq $proxy->host;
+
+	$info->{debug} = not $info->{debug} if $message->uri->query =~ m{debug};
+	warn "## ", dump( $headers, $message ) if $info->{debug};
+
+	my $host_port = $proxy->host . ':' . $proxy->port;
+
+	my $res = HTTP::Response->new( 200 );
+
+	if ( $message->uri->path =~ m/(proxy.pac|wpad.dat)/ ) {
+		$res->content_type('application/x-ns-proxy-autoconfig');
+		$res->content(qq|
+
+function FindProxyForURL(url, host) {
+//	if (shExpMatch(url, "*.example.com:*/*"))               {return "DIRECT";}
+
+	if (shExpMatch(url, "*.js")) return "DIRECT";
+	if (shExpMatch(url, "*.css")) return "DIRECT";
+	if (shExpMatch(url, "*.gif")) return "DIRECT";
+	if (shExpMatch(url, "*.png")) return "DIRECT";
+	if (shExpMatch(url, "*.ico")) return "DIRECT";
+ 
+//	 if (isInNet(host, "10.0.0.0",  "255.255.248.0"))    {
+//		return "PROXY fastproxy.example.com:8080";
+//	}
+ 
+	return "PROXY $host_port; DIRECT";
+}
+
+		|);
+		$self->proxy->response( $res );
+		return;
+	}
+
+	$res->content_type('text/html');
+	$res->content(qq|
+
+<h1>HTTP Proxy Archive</h1>
+
+<a href="http://$host_port/proxy.pac">proxy.pac</a>
+
+	| . '<pre>' . dump($info) . '</pre>' );
+
+	$self->proxy->response( $res );
+} );
+$proxy->push_filter( request => $admin_filter );
+
+
+#
+# start
+#
 
 warn "listen on host ", $proxy->host, " port ", $proxy->port, "\n";
 
