@@ -149,18 +149,18 @@ $proxy->push_filter(
             my ( $self, $message ) = @_;    # for information, saorge
             $saved = 0;
         },
-        filter => sub {
-            my ( $self, $dataref, $message, $protocol, $buffer ) = @_;
-            $$dataref = $saved++ ? "" 
-              : sprintf '<p>Saving PDF file. Go <a href="%s">back</a></p>',
-                        $message->request->header('referer');
-        }
+#        filter => sub {
+#            my ( $self, $dataref, $message, $protocol, $buffer ) = @_;
+#            $$dataref = $saved++ ? "" 
+#              : sprintf '<p>Saving PDF file. Go <a href="%s">back</a></p>',
+#                        $message->request->header('referer');
+#        }
     ),
     # change the response Content-Type
     response => HTTP::Proxy::HeaderFilter::simple->new(
         sub {
             my ( $self, $headers, $response ) = @_;
-            $headers->content_type('text/html');
+#            $headers->content_type('text/html');
         }
     ),
 );
@@ -176,7 +176,9 @@ warn "XXX ", $headers->header('x-forwarded-for'), ' ', $message->uri, "\n";
 	my $host = $message->uri->host;
 	return unless $host eq $proxy->host;
 
-	$info->{debug} = not $info->{debug} if $message->uri->query =~ m{debug};
+	if ( my $q = $message->uri->query ) {
+		$info->{debug} = not $info->{debug} if $q =~ m{debug};
+	}
 	warn "## ", dump( $headers, $message ) if $info->{debug};
 
 	my $host_port = $proxy->host . ':' . $proxy->port;
