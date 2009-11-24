@@ -9,13 +9,17 @@ use HTTP::Proxy::BodyFilter::save;
 use HTTP::Proxy::BodyFilter::simple;
 use HTTP::Proxy::HeaderFilter::simple;
 
-our $info = {
-	debug => 1,
-	direct => [ qw/
-imageserver.ebscohost.com
-	/ ],
-};
 use Data::Dump qw(dump);
+
+sub var_save {
+	my ( $dir, $name, $value ) = @_;
+	$value ||= "\n";
+	mkdir "var/$dir" unless -e "var/$dir";
+	open(my $fh, '>>', "var/$dir/$name") || die $!;
+	print $fh $value;
+	close($fh);
+}
+
 
 #
 # logger.pl
@@ -89,7 +93,13 @@ my $get_filter = HTTP::Proxy::HeaderFilter::simple->new(
             print_headers( $req, @clt_hdr );
         }
         print STDOUT $message->status_line, "\n";
-        print_headers( $message, @srv_hdr );
+	print_headers( $message, @srv_hdr );
+
+	if ( my $cookie = $message->header( 'Set-Cookie' ) ) {
+		my $host = $req->uri->host;
+		warn "COOKIE: $cookie from $host\n";
+		var_save 'cookie' => $host;
+	}
     }
 );
 
@@ -169,17 +179,25 @@ $proxy->push_filter(
 # admin interface
 #
 
+sub debug_on { -e 'var/debug' }
+sub debug_dump { -e 'var/debug' && warn "## ", dump( @_ ) }
+
 my $admin_filter = HTTP::Proxy::HeaderFilter::simple->new( sub {
    my ( $self, $headers, $message ) = @_;
 warn "XXX ", $headers->header('x-forwarded-for'), ' ', $message->uri, "\n";
 
+	print $self->request->as_string, $/, $message->headers_as_string, $/ if debug_on;
+
 	my $host = $message->uri->host;
+	var_save 'hits' => $host;
 	return unless $host eq $proxy->host;
 
 	if ( my $q = $message->uri->query ) {
-		$info->{debug} = not $info->{debug} if $q =~ m{debug};
+		if ( $q =~ m{debug} ) {
+			-e 'var/debug' ? unlink 'var/debug' : open(my $touch,'>','var/debug');
+		}
 	}
-	warn "## ", dump( $headers, $message ) if $info->{debug};
+	debug_dump( $headers, $message );
 
 	my $host_port = $proxy->host . ':' . $proxy->port;
 
@@ -219,11 +237,16 @@ function FindProxyForURL(url, host) {
 
 <h1>HTTP Proxy Archive</h1>
 
-<a href="http://$host_port/proxy.pac">proxy.pac</a>
+<div style="background: #ff0; padding: 1em;">
+
+Copy following url into automatic proxy configuration and enable it:
+<p>
+<a href="http://$host_port/proxy.pac">http://$host_port/proxy.pac</a>
+
+</div>
 
 	| 
-	. '<pre>' . dump($info) . '</pre>'
-	. qq|<a href="?debug">debug</a>|
+	. qq|<a href=/>/</a> <a href="?debug">debug</a>|
 	);
 
 	$self->proxy->response( $res );
