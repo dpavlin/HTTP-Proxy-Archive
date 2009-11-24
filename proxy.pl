@@ -173,7 +173,8 @@ my $admin_filter = HTTP::Proxy::HeaderFilter::simple->new( sub {
    my ( $self, $headers, $message ) = @_;
 warn "XXX ", $headers->header('x-forwarded-for'), ' ', $message->uri, "\n";
 
-	return unless $message->uri->host eq $proxy->host;
+	my $host = $message->uri->host;
+	return unless $host eq $proxy->host;
 
 	$info->{debug} = not $info->{debug} if $message->uri->query =~ m{debug};
 	warn "## ", dump( $headers, $message ) if $info->{debug};
@@ -194,11 +195,15 @@ function FindProxyForURL(url, host) {
 	if (shExpMatch(url, "*.gif")) return "DIRECT";
 	if (shExpMatch(url, "*.png")) return "DIRECT";
 	if (shExpMatch(url, "*.ico")) return "DIRECT";
+	if (shExpMatch(url, "*.jpg")) return "DIRECT";
  
 //	 if (isInNet(host, "10.0.0.0",  "255.255.248.0"))    {
 //		return "PROXY fastproxy.example.com:8080";
 //	}
- 
+
+	// we don't want to see this traffic! 
+	if (shExpMatch(url, "*.google.*")) return "DIRECT";
+
 	return "PROXY $host_port; DIRECT";
 }
 
@@ -214,7 +219,10 @@ function FindProxyForURL(url, host) {
 
 <a href="http://$host_port/proxy.pac">proxy.pac</a>
 
-	| . '<pre>' . dump($info) . '</pre>' );
+	| 
+	. '<pre>' . dump($info) . '</pre>'
+	. qq|<a href="?debug">debug</a>|
+	);
 
 	$self->proxy->response( $res );
 } );
