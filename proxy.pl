@@ -146,10 +146,11 @@ else {
 my $saved;
 $proxy->push_filter(
     # you should probably restrict this to certain hosts as well
-    path => qr/\.pdf$/,
+    path => qr/\.pdf\b/,
     mime => 'application/pdf',
     # save the PDF
     response => HTTP::Proxy::BodyFilter::save->new(
+	timestamp => 1,
         template => "%f",
         prefix   => 'pdf'
     ),
