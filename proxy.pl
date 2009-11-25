@@ -221,7 +221,7 @@ sub debug_dump { -e 'var/debug' && warn "## ", dump( @_ ) }
 
 my $admin_filter = HTTP::Proxy::HeaderFilter::simple->new( sub {
    my ( $self, $headers, $message ) = @_;
-warn "XXX [", $headers->header('x-forwarded-for'), '] ', $message->uri, "\n";
+warn "\nXXX [", $headers->header('x-forwarded-for'), '] ', $message->uri, "\n";
 
 	print $message->headers_as_string if debug_on;
 
