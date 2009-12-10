@@ -254,6 +254,9 @@ function FindProxyForURL(url, host) {
 	if (shExpMatch(url, "*.ico")) return "DIRECT";
 	if (shExpMatch(url, "*.jpg")) return "DIRECT";
  
+	if (isInNet(host, "127.0.0.0",  "255.0.0.0"))
+		return "DIRECT";
+
 //	 if (isInNet(host, "10.0.0.0",  "255.255.248.0"))    {
 //		return "PROXY fastproxy.example.com:8080";
 //	}
