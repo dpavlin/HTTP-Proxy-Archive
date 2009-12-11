@@ -299,7 +299,7 @@ $proxy->push_filter( request => $admin_filter );
 # start
 #
 
-warn "listen on host ", $proxy->host, " port ", $proxy->port, "\n";
+warn "user interface at http://", $proxy->host, ":", $proxy->port, "\n";
 
 $proxy->start;
 
