@@ -1,7 +1,7 @@
-HTTP Proxy Arhive
+HTTP Proxy Archive
 
-Extended HTTP::Proxy perl module to support proxy.pac generation, digest http auth and
-(planned) selectable arhiving of content per user.
+Extended HTTP::Proxy perl with proxy.pac generation, digest HTTP auth and (planned) archiving
+
 
 Source: http://github.com/dpavlin/HTTP-Proxy-Archive
 
