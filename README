@@ -1,3 +1,22 @@
-HTTP Proxy Arhive
+HTTP Proxy Archive
 
-$ google-chrome --user-data-dir=/tmp/chrome/ --proxy-pac-url=http://193.198.212.253:1234/proxy.pac
+Extended HTTP::Proxy perl with proxy.pac generation, digest HTTP auth and (planned) archiving
+
+
+Source: http://github.com/dpavlin/HTTP-Proxy-Archive
+
+
+Checkout source:
+
+$ git clone git@github.com:dpavlin/HTTP-Proxy-Archive.git
+$ cd HTTP-Proxy-Archive
+
+
+Start proxy:
+
+$ ./proxy.pl
+
+
+Configure Google Chrome to use it:
+
+$ google-chrome --user-data-dir=/tmp/chrome/ --proxy-pac-url=http://localhost:8080/proxy.pac
