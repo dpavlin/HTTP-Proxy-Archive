@@ -181,37 +181,137 @@ $proxy->push_filter(
 # proxy-auth.pl
 #
 
+my $username = 'http';
+my $passwd   = 'proxy';
+my $realm    = 'HTTP::Proxy';
+
+my $auth = 'Basic'; # XXX unsecure!!
+$auth = 'Digest';
 
 use HTTP::Proxy qw( :log );
 use MIME::Base64 qw( encode_base64 );
+use Carp qw/carp/;
 
 # the encoded user:password pair
 # login:  http
 # passwd: proxy
-my $token = "Basic " . encode_base64( "http:proxy", '' );
+my $token = "Basic " . encode_base64( "$username:$passwd", '' );
+
+sub auth_response {
+	my $response = HTTP::Response->new(407);
+	$response->header(
+		Proxy_Authenticate => qq{$auth realm="$realm"}
+	);
+	warn "XXX 407 $auth $realm\n";
+	return $response;
+}
+
+our $digest_cache;
 
 # the authentication filter
-$proxy->push_filter(
-    request => HTTP::Proxy::HeaderFilter::simple->new(
-        sub {
-            my ( $self, $headers, $request ) = @_;
+my $auth_filter = $auth eq 'Basic' ? 
+	sub {
+		my ( $self, $headers, $request ) = @_;
 
-            # check the token against all credentials
-            my $ok = 0;
-            $_ eq $token && $ok++
-                for $self->proxy->hop_headers->header('Proxy-Authorization');
+		warn "WARNING: Basic HTTP authentification isn't secure!";
 
-            # no valid credential
-            if ( !$ok ) {
-                my $response = HTTP::Response->new(407);
-                $response->header(
-                    Proxy_Authenticate => 'Basic realm="HTTP::Proxy"' );
-                $self->proxy->response($response);
-            }
-        }
-    )
-);
+		# check the token against all credentials
+		my $ok = 0;
+		$_ eq $token && $ok++
+			for $self->proxy->hop_headers->header('Proxy-Authorization');
 
+		# no valid credential
+		$self->proxy->response( auth_response ) if ! $ok;
+	}
+:
+	 sub {
+		my ( $self, $headers, $c ) = @_;
+
+		foreach my $authorization ( $self->proxy->hop_headers->header('Proxy-Authorization') ) {
+			if ( $authorization !~ m{^Digest} ) {
+				warn "skip $authorization\n";
+				next;
+			}
+
+			my %res = map {
+				my @key_val = split /=/, $_, 2;
+				$key_val[0] = lc $key_val[0];
+				$key_val[1] =~ s{"}{}g;    # remove the quotes
+				@key_val;
+			} split /,\s?/, substr( $authorization, 7 );    #7 == length "Digest "
+
+			my $opaque = $res{opaque};
+			my $nonce  = $digest_cache->{ $opaque } || next;
+
+			warn '# Checking authentication parameters.';
+
+			my $uri         = $c->request->uri->path_query;
+			my $algorithm   = $res{algorithm} || 'MD5';
+			my $nonce_count = '0x' . $res{nc};
+
+			my $check = $uri eq $res{uri}
+				&& ( exists $res{username} )
+				&& ( $res{username} eq $username )
+				&& ( exists $res{qop} )
+				&& ( exists $res{cnonce} )
+				&& ( exists $res{nc} )
+				&& $algorithm eq $nonce->{algorithm}
+				&& hex($nonce_count) > hex( $nonce->{nonce_count} )
+				&& $res{nonce} eq $nonce->{nonce};	# TODO: set Stale instead
+
+			if ( ! $check ) {
+				$self->proxy->response( auth_response );
+				return;
+			}
+
+			warn 'Checking authentication response.';
+
+			# everything looks good, let's check the response
+			# calculate H(A2) as per spec
+			my $ctx = Digest::MD5->new;
+			$ctx->add( join( ':', $c->request->method, $res{uri} ) );
+			if ( $res{qop} eq 'auth-int' ) {
+				my $digest =
+					Digest::MD5::md5_hex( $c->request->body );	# not sure here
+				$ctx->add( ':', $digest );
+			}
+			my $A2_digest = $ctx->hexdigest;
+
+			for my $r ( 0 .. 1 ) {
+				# calculate H(A1) as per spec
+				my $A1_digest = $r ? $passwd : do {
+					$ctx = Digest::MD5->new;
+					$ctx->add( join( ':', $username, $realm->name, $passwd ) );
+					$ctx->hexdigest;
+				};
+				if ( $nonce->algorithm eq 'MD5-sess' ) {
+					$ctx = Digest::MD5->new;
+					$ctx->add( join( ':', $A1_digest, $res{nonce}, $res{cnonce} ) );
+					$A1_digest = $ctx->hexdigest;
+				}
+
+				my $digest_in = join( ':',
+						$A1_digest, $res{nonce},
+						$res{qop} ? ( $res{nc}, $res{cnonce}, $res{qop} ) : (),
+						$A2_digest );
+				my $rq_digest = Digest::MD5::md5_hex($digest_in);
+				$nonce->{nonce_count} = $nonce_count;
+				$digest_cache->{ $nonce->opaque } = $nonce;
+
+				if ($rq_digest eq $res{response} ) {
+					return;
+				} else {
+					warn "XXX $rq_digest not $res{response}";
+				}
+			}
+		}
+		$self->proxy->response( auth_response );
+	}
+;
+
+warn "auth_filter $auth_filter";
+
+$proxy->push_filter( request => HTTP::Proxy::HeaderFilter::simple->new( $auth_filter ) );
 
 #
 # admin interface
