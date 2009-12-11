@@ -6,6 +6,13 @@ Extended HTTP::Proxy perl with proxy.pac generation, digest HTTP auth and (plann
 Source: http://github.com/dpavlin/HTTP-Proxy-Archive
 
 
+Digest HTTP authorization
+
+* http://tools.ietf.org/html/rfc2617
+* http://en.wikipedia.org/wiki/Digest_access_authentication
+* http://search.cpan.org/~dhoss/Catalyst-Authentication-Credential-HTTP/
+
+
 Checkout source:
 
 $ git clone git@github.com:dpavlin/HTTP-Proxy-Archive.git
