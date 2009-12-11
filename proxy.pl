@@ -228,7 +228,7 @@ warn "\nXXX [", $headers->header('x-forwarded-for'), '] ', $message->uri, "\n";
 
 	my $host = $message->uri->host;
 	var_save 'hits' => $host;
-	return unless $host eq $proxy->host;
+	return unless $host eq $proxy->host && $message->uri->port == $proxy->port;
 
 	if ( my $q = $message->uri->query ) {
 		if ( $q =~ m{debug} ) {
