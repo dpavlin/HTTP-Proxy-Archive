@@ -185,28 +185,60 @@ my $username = 'http';
 my $passwd   = 'proxy';
 my $realm    = 'HTTP::Proxy';
 
+$realm = 'testrealm@host.com';
+
 my $auth = 'Basic'; # XXX unsecure!!
 $auth = 'Digest';
 
 use HTTP::Proxy qw( :log );
 use MIME::Base64 qw( encode_base64 );
 use Carp qw/carp/;
+use Data::UUID ();
 
 # the encoded user:password pair
-# login:  http
-# passwd: proxy
 my $token = "Basic " . encode_base64( "$username:$passwd", '' );
+
+our $digest_cache;
+our $opaque;
 
 sub auth_response {
 	my $response = HTTP::Response->new(407);
-	$response->header(
-		Proxy_Authenticate => qq{$auth realm="$realm"}
-	);
-	warn "XXX 407 $auth $realm\n";
+	my $header = qq{$auth realm="$realm"};
+
+	if ( $auth eq 'Digest' ) {
+
+		my $nonce;
+
+		if ( ! $opaque ) {
+			$opaque = Data::UUID->new->create_b64;
+			chomp $opaque;
+			$nonce = Data::UUID->new->create_b64;
+			chomp $nonce;
+			warn "## new opaque $opaque nonce $nonce\n";
+		}
+
+		$digest_cache->{ $opaque } ||= {
+			algorithm => 'MD5',
+			nonce => $nonce,
+			opaque => $opaque,
+			nounce_count => '0x0',
+			qpop => 'auth,auth-int',
+		};
+
+		$header .= ',' . join(',', map {
+			qq|$_="$digest_cache->{$opaque}->{$_}"|
+		} keys %{ $digest_cache->{$opaque} } );
+
+		$header =~ s{\s+}{ }gs;
+
+		warn "digest_cache ",dump( $digest_cache );
+
+	}
+
+	$response->header( Proxy_Authenticate => $header );
+	warn ">>>> 407 $header\n";
 	return $response;
 }
-
-our $digest_cache;
 
 # the authentication filter
 my $auth_filter = $auth eq 'Basic' ? 
@@ -221,13 +253,16 @@ my $auth_filter = $auth eq 'Basic' ?
 			for $self->proxy->hop_headers->header('Proxy-Authorization');
 
 		# no valid credential
-		$self->proxy->response( auth_response ) if ! $ok;
+		return $self->proxy->response( auth_response ) if ! $ok;
 	}
 :
 	 sub {
-		my ( $self, $headers, $c ) = @_;
+		my ( $self, $headers, $request ) = @_;
 
 		foreach my $authorization ( $self->proxy->hop_headers->header('Proxy-Authorization') ) {
+
+			warn "<<<< Proxy-Authorization: $authorization";
+
 			if ( $authorization !~ m{^Digest} ) {
 				warn "skip $authorization\n";
 				next;
@@ -240,14 +275,23 @@ my $auth_filter = $auth eq 'Basic' ?
 				@key_val;
 			} split /,\s?/, substr( $authorization, 7 );    #7 == length "Digest "
 
-			my $opaque = $res{opaque};
-			my $nonce  = $digest_cache->{ $opaque } || next;
+			warn "res ",dump( \%res );
+
+			$opaque = $res{opaque}
+			|| return $self->proxy->response( auth_response );
+
+			my $nonce  = $digest_cache->{ $opaque };
+
+			if ( ! $nonce ) {
+				warn "no $opaque in ",dump( $digest_cache );
+				next;
+			}
 
 			warn '# Checking authentication parameters.';
 
-			my $uri         = $c->request->uri->path_query;
+			my $uri         = $request->uri->path_query || die "uri";
 			my $algorithm   = $res{algorithm} || 'MD5';
-			my $nonce_count = '0x' . $res{nc};
+			my $nonce_count = '0x' . ( $res{nc} || 0 );
 
 			my $check = $uri eq $res{uri}
 				&& ( exists $res{username} )
@@ -259,20 +303,17 @@ my $auth_filter = $auth eq 'Basic' ?
 				&& hex($nonce_count) > hex( $nonce->{nonce_count} )
 				&& $res{nonce} eq $nonce->{nonce};	# TODO: set Stale instead
 
-			if ( ! $check ) {
-				$self->proxy->response( auth_response );
-				return;
-			}
+			return $self->proxy->response( auth_response ) unless $check;
 
-			warn 'Checking authentication response.';
+			warn "# Checking authentication response ";
 
 			# everything looks good, let's check the response
 			# calculate H(A2) as per spec
 			my $ctx = Digest::MD5->new;
-			$ctx->add( join( ':', $c->request->method, $res{uri} ) );
+			$ctx->add( join( ':', $request->method, $res{uri} ) );
 			if ( $res{qop} eq 'auth-int' ) {
 				my $digest =
-					Digest::MD5::md5_hex( $c->request->body );	# not sure here
+					Digest::MD5::md5_hex( $request->body );	# not sure here
 				$ctx->add( ':', $digest );
 			}
 			my $A2_digest = $ctx->hexdigest;
@@ -284,7 +325,7 @@ my $auth_filter = $auth eq 'Basic' ?
 					$ctx->add( join( ':', $username, $realm->name, $passwd ) );
 					$ctx->hexdigest;
 				};
-				if ( $nonce->algorithm eq 'MD5-sess' ) {
+				if ( $nonce->{algorithm} eq 'MD5-sess' ) {
 					$ctx = Digest::MD5->new;
 					$ctx->add( join( ':', $A1_digest, $res{nonce}, $res{cnonce} ) );
 					$A1_digest = $ctx->hexdigest;
@@ -296,7 +337,9 @@ my $auth_filter = $auth eq 'Basic' ?
 						$A2_digest );
 				my $rq_digest = Digest::MD5::md5_hex($digest_in);
 				$nonce->{nonce_count} = $nonce_count;
-				$digest_cache->{ $nonce->opaque } = $nonce;
+				$digest_cache->{ $nonce->{opaque} } = $nonce;
+
+warn "digest_cache ", dump( $digest_cache );
 
 				if ($rq_digest eq $res{response} ) {
 					return;
@@ -322,7 +365,7 @@ sub debug_dump { -e 'var/debug' && warn "## ", dump( @_ ) }
 
 my $admin_filter = HTTP::Proxy::HeaderFilter::simple->new( sub {
    my ( $self, $headers, $message ) = @_;
-warn "\nXXX [", $headers->header('x-forwarded-for'), '] ', $message->uri, "\n";
+warn "\n[", $headers->header('x-forwarded-for'), '] ', $message->uri, "\n";
 
 	print $message->headers_as_string if debug_on;
 
