@@ -14,6 +14,7 @@ use Data::Dump qw(dump);
 sub var_save {
 	my ( $dir, $name, $value ) = @_;
 	$value ||= "\n";
+	mkdir 'var' unless -e 'var';
 	mkdir "var/$dir" unless -e "var/$dir";
 	open(my $fh, '>>', "var/$dir/$name") || die $!;
 	print $fh $value;
