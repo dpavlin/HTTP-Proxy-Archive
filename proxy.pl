@@ -16,6 +16,9 @@ use Data::Dump qw(dump);
 # from http://cpansearch.perl.org/src/BOBTFISH/HTTP-Proxy-Selective-0.004/script/selective_proxy
 #
 
+system "openssl req -new -x509 -days 365 -nodes -out ssl.cert -keyout ssl.key"
+	if ! -e 'ssl.key';
+
 use IO::Socket::SSL;
 
 sub _handle_CONNECT {
@@ -48,8 +51,8 @@ warn "XXX";
     { no strict 'refs'; unshift(@{$class . "::ISA"}, 'IO::Socket::SSL'); } # Forcibly change classes the socket inherits from
     $class->start_SSL($conn, 
         SSL_server => 1, 
-        SSL_key_file => './key',
-        SSL_cert_file => './cert', # Turn our client socket into SSL.
+        SSL_key_file => 'ssl.key',
+        SSL_cert_file => 'ssl.cert', # Turn our client socket into SSL.
     ) or warn("Could not start SSL");
     ${*$conn}{'httpd_nomore'} = 0; # Pay no attention to the Connection: close header behind the curtain.
     {   # Build a method to fiddle with the request object we get from the client, as it needs to http->https
