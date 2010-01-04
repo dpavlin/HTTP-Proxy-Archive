@@ -1,7 +1,29 @@
 HTTP Proxy Archive
+<<<<<<< HEAD
 
 This is experiment to extend HTTP::Proxy with automatic proxy.pac generation and http digest authentication
 
 Test it with with Google Chrome:
+=======
+>>>>>>> 4500e8b3ebba481eb301dd99185ff494c168387b
 
-$ google-chrome --user-data-dir=/tmp/chrome/ --proxy-pac-url=http://193.198.212.253:1234/proxy.pac
+Extended HTTP::Proxy perl with proxy.pac generation, digest HTTP auth and (planned) archiving
+
+
+Source: http://github.com/dpavlin/HTTP-Proxy-Archive
+
+
+Checkout source:
+
+$ git clone git@github.com:dpavlin/HTTP-Proxy-Archive.git
+$ cd HTTP-Proxy-Archive
+
+
+Start proxy:
+
+$ ./proxy.pl
+
+
+Configure Google Chrome to use it:
+
+$ google-chrome --user-data-dir=/tmp/chrome/ --proxy-pac-url=http://localhost:8080/proxy.pac
